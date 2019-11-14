@@ -1,0 +1,7 @@
+<xml>
+	<zone>
+		<ip>196.88.185.5</ip>
+		<fqdn>test.castle-it.fr</fqdn>
+		<zone_file>test.fr</zone_file>
+	</zone>
+</xml>
