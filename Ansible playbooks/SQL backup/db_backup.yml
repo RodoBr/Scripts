@@ -1,0 +1,48 @@
+  - hosts: '{{ db_server }}'
+    become: true
+
+    vars:
+        my_client: "{{ client }}"
+        target_db: "{{ db }}"
+        time: "{{ lookup('pipe', 'date +%d-%m-%Y') }}"
+        db_passwd: "{{ vault_db_passwd }}"
+    
+    tasks:
+       
+      - name: Check if client's folder exists and create it if not
+        block:
+          - name: Check if the client's folder exists
+            shell: "ls /home/rodo/db_backup/{{ my_client }}/"
+            register: folder_check
+            delegate_to: localhost
+
+        rescue:
+          - name: Create client's folder
+            file:
+              path: /home/rodo/db_backup/{{ my_client }}
+              state: directory
+              mode: '777'
+            delegate_to: localhost
+
+      - name: Get the DB's dump
+        block:
+          - name: Create the DB backup
+            mysql_db:
+              name: "{{ target_db }}"
+              state: dump
+              target: /tmp/{{ time }}.sql
+              login_host: localhost
+              login_user: root
+              login_password: "{{ db_passwd }}"
+
+          - name: copy the DB dump to the backup server
+            fetch:
+              src: /tmp/{{ time }}.sql
+              dest: /home/rodo/db_backup/{{ my_client }}/{{ time }}.sql
+              flat: yes
+
+          - name: remove the DB dump from remote server
+            file:
+              path: /tmp/{{ time }}.sql
+              state: absent
+

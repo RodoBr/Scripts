@@ -1,0 +1,68 @@
+- hosts: '{{ host }}'
+  connection: local
+ 
+  vars:
+        my_client: "{{ client }}"
+        restore_date: "{{ date }}"
+        safe_mode: "{{ safe }}"
+        local_backup: "/home/rodo/backup"
+        remote_path: "/home/rodo"
+        ssh_user: "rodo"
+        ssh_client: "192.168.83.122"
+
+  tasks:
+
+    - name: Handling wrong arguments
+      block:
+          - name: Check if the client argument is present
+            fail:
+                msg: 'Missing argument. You must specify a client.'
+            when: client is not defined
+
+          - name: Check if the date argument is present
+            fail:
+                msg: 'Missing argument. You must specify a date.'
+            when: date is not defined
+
+          - name: Lookup for path in backup folder
+            shell: ls {{ local_backup }}/{{ my_client }}/{{ date }}
+            register: path
+            ignore_errors: yes
+
+          - name: Check if client exists
+            fail:
+                msg: "{{ local_backup }}/{{ my_client }}/{{ date }} backup path does not exists. Either client or date is not valid. Date must be dd-mm-yyyy"
+            when: path is failed
+
+      rescue:
+          - name: Send a mail to notify of a failed restore
+            mail:
+                host: smtp.castle-it.fr
+                port: 25
+                to: Yoann Thomas <ythomas@castle-it.fr>
+                subject: Restore failure
+                body: "{{ my_client }}'s {{ time }} restore has failed."
+            delegate_to: localhost
+
+          - name: Stop playbook from running
+            command: /bin/false
+            no_log: True
+
+    - name: Execute restore tasks
+      block:
+          - name: Run rsync command to proceed restoration without safe_mode
+            command: "rsync -avHP --numeric-ids {{ local_backup }}/{{ my_client }}/{{ restore_date }}/ {{ ssh_user }}@{{ ssh_client }}:{{ remote_path }}/{{ my_client }}/"
+            when: safe is not defined
+
+          - name: Run rsync command to proceed restoration with safe_mode
+            command: "rsync -avHP --numeric-ids {{ local_backup }}/{{ my_client }}/{{ restore_date }}/ {{ ssh_user }}@{{ ssh_client }}:{{ remote_path }}/{{ my_client }}/{{ restore_date }}/"
+            when: safe is defined
+
+          - name: Send a mail to notify of a successful restore
+            mail:
+                host: smtp.castle-it.fr
+                port: 25
+                to: Yoann Thomas <ythomas@castle-it.fr>
+                subject: Restore successful !
+                body: "{{ my_client }}'s {{ time }} restore has been executed successfully."
+            delegate_to: localhost

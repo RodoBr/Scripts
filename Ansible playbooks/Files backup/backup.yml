@@ -1,0 +1,90 @@
+- hosts: '{{ host }}'
+  connection: local
+ 
+  vars:
+        my_client: "{{ client }}"
+        time: "{{ lookup('pipe', 'date +%d-%m-%Y') }}"
+        local_backup: "/home/rodo/backup"
+        client_path_file: "/home/rodo/paths"
+        ssh_user: "rodo"
+        ssh_client: "192.168.83.122"
+
+  tasks:
+
+    - name: Handling wrong client argument
+      block:
+          - name: Check if the argument is present
+            fail:
+                msg: 'Missing argument. You must specify a client.'
+            when: client is not defined
+
+          - name: Lookup for paths in client_path_file
+            shell: cat {{ client_path_file }}/{{ my_client }}
+            register: paths
+            ignore_errors: yes
+
+          - name: Display error msg when no path file for the client
+            fail:
+                msg: "{{ my_client }} does not exists in our paths list"
+            when: paths is failed
+
+      rescue:
+          - name: Send a mail to notify of a failed backup
+            mail:
+                host: smtp.castle-it.fr
+                port: 25
+                to: Yoann Thomas <ythomas@castle-it.fr>
+                subject: Backup failure
+                body: "{{ my_client }}'s {{ time }} has failed."
+            delegate_to: localhost
+
+          - name: Stop playbook from running
+            command: /bin/false
+            no_log: True
+
+    - name: Check if client's folder exists on backup server and create it if needed
+      block:
+          - name: Check if folder exists
+            shell: "ls {{ local_backup }}/{{ my_client }}/"
+            register: folder_check
+
+      rescue:
+          - name: Create folder
+            file:
+              path: "{{ local_backup }}/{{ my_client }}"
+              state: directory
+              mode: '777'
+
+    - name: Execute backup tasks
+      block:
+          - name: Concatenate paths to pass it to rsync command
+            set_fact:
+                rsync_paths: "{{ paths.stdout_lines | join(' :') }}"
+
+          - name: Run rsync command to proceed incremental backup
+            command: "rsync -auvHP --numeric-ids --delete --backup --backup-dir={{ local_backup }}/{{ my_client }}/{{ time }}/ {{ ssh_user }}@{{ ssh_client }}:{{ rsync_paths }} {{ local_backup }}/{{ my_client }}/latest_backup/"
+
+          - name: Find all folders older than 8 days
+            find:
+                paths: "{{ local_backup }}/{{ my_client }}/"
+                age: "8d"
+                file_type: directory
+            register: dirs_to_remove
+
+          - name: Delete dirs_to_remove
+            file:
+                path: "{{ item.path }}"
+                state: absent
+            with_items: "{{ dirs_to_remove.files }}"
+
+          - name: Send a mail to notify of a successful backup
+            mail:
+                host: smtp.castle-it.fr
+                port: 25
+                to: Yoann Thomas <ythomas@castle-it.fr>
+                subject: Backup successful !
+                body: "{{ my_client }}'s data have been successfully saved in {{ local_backup }}"
+            delegate_to: localhost
+
+
+

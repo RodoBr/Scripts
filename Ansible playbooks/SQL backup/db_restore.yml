@@ -1,0 +1,48 @@
+  - hosts: '{{ db_server }}'
+    become: True
+    
+    vars:
+        my_client: "{{ client }}"
+        target_db: "{{ db }}"
+        restore_date: "{{ date }}"
+        db_passwd: "{{ vault_db_passwd }}"
+
+    tasks:
+
+      - name: Check if the client's DB password file exists
+        block:
+          - name: Get DB's password
+            shell: cat /home/rodo/db_password/{{ my_client }}
+            register: db_pass
+            delegate_to: localhost
+
+        rescue:
+          - debug:
+              msg:
+               - "We don't have {{ my_client }}'s database password"
+               - "Please, write it into /home/rodo/db_password/{{ my_client }}"
+
+          - name: Exit playbook
+            command: /bin/false
+            no_log: True
+     
+      - name: Copy the dump and restore the DB
+        block:
+          - name: Copy the backed up DB dump to the remote server
+            copy:
+              src: /home/rodo/db_backup/{{ my_client }}/{{ restore_date }}.sql
+              dest: /tmp/{{ restore_date }}.sql
+     
+          - name: Restore DB
+            mysql_db:
+              name: "{{ target_db }}"
+              state: import
+              target: /tmp/{{ restore_date }}.sql
+              login_host: localhost
+              login_user: root
+              login_password: "{{ db_passwd }}"
+
+          - name: Delete the restore dump from remote server
+            file:
+              path: /tmp/{{ restore_date }}.sql
+              state: absent

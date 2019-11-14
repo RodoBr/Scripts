@@ -1,0 +1,12 @@
+---
+
+- hosts: "{{ node }}"
+  remote_user: alexandre
+  become: true
+  vars:
+          node_backup_dir: "/home/alexandre/couchdb_backup/backups"
+          target_db: "{{ db }}"
+          script_path: "/home/alexandre/couchdb_backup/couchdb-backup.sh"
+  tasks:
+          - name: Create a dump of the DB on the remote node
+            shell: "bash {{ script_path }} -b -H 127.0.0.1 -d {{ db }} -f {{ node_backup_dir }}/backup-{{ db }}.json -T -u admin -p 1234"
